@@ -10,8 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Serializes operations that depend on who is in a household, with a database lock held until the current transaction
  * ends.
  * <ul>
- *     <li>{@link #shared()}: creating or moving entries on household categories. Concurrent bookings don't block each
- *     other.</li>
+ *     <li>{@link #shared()}: creating, changing or deleting expenses and recurring expenses, which the separation of
+ *     entries might be moving. Concurrent bookings don't block each other.</li>
  *     <li>{@link #exclusive()}: changing who is in a household (the separation of entries must see every booking) and
  *     changing categories (the icon check must see every category).</li>
  * </ul>

@@ -609,6 +609,34 @@ public class HouseholdCategoriesTest extends TestContainerTest {
     }
 
     @Test
+    public void leavingWaitsForRunningDeletions() throws Exception {
+        Category house = ownCategory(currentUser, "house");
+        Expense expense = expenseService.create(newExpense(house, 10), partner);
+        RecurringExpense recurring = recurringExpenseService.create(newRecurring(house, 20, "rent"), partner);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (OpenTransaction<Boolean> deleting = new OpenTransaction<>(() -> {
+            boolean deleted = expenseService.delete(expense.getId(), partner) && recurringExpenseService.delete(recurring.getId(), partner);
+            expenseRepository.flush();
+            return deleted;
+        })) {
+            Future<Boolean> leaving = inBackground(executor, () -> householdService.leaveHousehold(partner));
+
+            // the separation would try to move the deleted entries
+            assertThrows(TimeoutException.class, () -> leaving.get(1, TimeUnit.SECONDS));
+
+            assertTrue(deleting.commit());
+            assertTrue(leaving.get(20, TimeUnit.SECONDS));
+
+            assertTrue(householdService.getCurrentHousehold(partner).isEmpty());
+            assertTrue(expenseRepository.findById(expense.getId()).isEmpty());
+            assertTrue(recurringExpenseRepository.findById(recurring.getId()).isEmpty());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     public void bookingAfterLeavingCannotUseTheFormerHouseholdCategories() throws Exception {
         Category house = ownCategory(currentUser, "house");
         ExecutorService executor = Executors.newSingleThreadExecutor();

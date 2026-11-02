@@ -91,6 +91,7 @@ public class ExpenseService {
     @Transactional
     @EventListener(ApplicationReadyEvent.class)
     public void fixLegacyExpensesTimeZones() throws SQLException {
+        householdLocks.shared();
 
         var migrated = settingsService.getByName(Settings.TIMESTAMP_FIXED);
         if (migrated != null && migrated.getValue().equalsIgnoreCase("1")) {
@@ -252,6 +253,8 @@ public class ExpenseService {
 
     @Transactional
     public boolean delete(long id, User user) throws Exception {
+        // a member leaving the household right now might be moving this expense
+        householdLocks.shared();
         final Expense expense = get(id, user);
         // get() only returns expenses created by the user
         if (expense != null) {

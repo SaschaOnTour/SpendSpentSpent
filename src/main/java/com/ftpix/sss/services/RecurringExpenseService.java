@@ -164,6 +164,8 @@ public class RecurringExpenseService {
 
     @Transactional
     public boolean delete(long id, User user) throws Exception {
+        // a member leaving the household right now might be moving this recurring expense
+        householdLocks.shared();
         if (getId(id, user) != null) {
             recurringExpenseRepository.deleteById(id);
             return true;
