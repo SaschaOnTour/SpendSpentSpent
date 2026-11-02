@@ -28,13 +28,15 @@ public class CategoryService {
     private final ExpenseRepository expenseRepository;
     private final RecurringExpenseRepository recurringExpenseRepository;
     private final HouseholdService householdService;
+    private final HouseholdLocks householdLocks;
 
     @Autowired
-    public CategoryService(CategoryRepository categoryRepository, ExpenseRepository expenseRepository, RecurringExpenseRepository recurringExpenseRepository, HouseholdService householdService) {
+    public CategoryService(CategoryRepository categoryRepository, ExpenseRepository expenseRepository, RecurringExpenseRepository recurringExpenseRepository, HouseholdService householdService, HouseholdLocks householdLocks) {
         this.categoryRepository = categoryRepository;
         this.expenseRepository = expenseRepository;
         this.recurringExpenseRepository = recurringExpenseRepository;
         this.householdService = householdService;
+        this.householdLocks = householdLocks;
     }
 
 
@@ -78,6 +80,8 @@ public class CategoryService {
             return;
         }
 
+        // other members could be giving the same icon to another category right now
+        householdLocks.exclusive(user);
         boolean used = getAll(user).stream()
                 .filter(c -> category == null || !c.getId().equals(category.getId()))
                 .anyMatch(c -> icon.equalsIgnoreCase(c.getIcon()));
@@ -113,6 +117,7 @@ public class CategoryService {
 
         checkIconAvailable(category.getIcon(), null, user);
 
+        householdService.notifyOtherMembersAfterCommit(user);
         return categoryRepository.saveAtEndOfHousehold(category, user);
     }
 
@@ -121,6 +126,7 @@ public class CategoryService {
         if (get(category.getId(), user) != null) {
 //            categoryDaoJooq.update(user, category);
             categoryRepository.save(category);
+            householdService.notifyOtherMembersAfterCommit(user);
         }
         return category;
     }
@@ -143,6 +149,7 @@ public class CategoryService {
             recurringExpenseRepository.deleteRecurringExpenseByCategory(category);
 
             categoryRepository.delete(category);
+            householdService.notifyOtherMembersAfterCommit(user);
             return true;
         } else {
             return false;
