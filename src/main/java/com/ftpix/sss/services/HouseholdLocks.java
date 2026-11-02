@@ -1,67 +1,48 @@
 package com.ftpix.sss.services;
 
-import com.ftpix.sss.models.Household;
-import com.ftpix.sss.models.User;
-import com.ftpix.sss.persistence.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.UUID;
-import java.util.function.Supplier;
-
 /**
- * Serializes operations that depend on who is in a household, by locking the user rows of the household members
- * (or only the user's row when not in a household) until the current transaction ends.
+ * Serializes operations that depend on who is in a household, with a database lock held until the current transaction
+ * ends.
  * <ul>
- *     <li>{@link #shared(User)}: creating or moving entries on household categories. Concurrent bookings don't block
- *     each other.</li>
- *     <li>{@link #exclusive(User)}: leaving or removing members (the separation of entries must see every booking) and
+ *     <li>{@link #shared()}: creating or moving entries on household categories. Concurrent bookings don't block each
+ *     other.</li>
+ *     <li>{@link #exclusive()}: changing who is in a household (the separation of entries must see every booking) and
  *     changing categories (the icon check must see every category).</li>
- *     <li>{@link #joining(User, Household)}: joining a household, locks the members on both sides.</li>
  * </ul>
- * Every membership change takes one of the exclusive locks, so the members can't change while a lock is held.
- * Locks must be taken before reading the data they protect.
+ * The lock must be taken before reading the data it protects, and before writing anything so it can't be part of a
+ * deadlock.
+ * <p>
+ * It is a single lock for all households: which rows to lock would depend on the members, which is what it protects.
+ * Exclusive operations are rare and short, so they don't need to run in parallel.
  */
 @Service
 public class HouseholdLocks {
-    private final UserRepository userRepository;
+    // any number, only needs to be unique among the advisory locks of the database
+    private static final long LOCK_KEY = 0x535353486f757365L;
 
-    @Autowired
-    public HouseholdLocks(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void shared() {
+        lock("pg_advisory_xact_lock_shared");
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void shared(User user) {
-        lockUntilStable(() -> userRepository.lockHouseholdUsersShared(user));
+    public void exclusive() {
+        lock("pg_advisory_xact_lock");
     }
 
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void exclusive(User user) {
-        lockUntilStable(() -> userRepository.lockHouseholdUsersExclusive(user));
-    }
-
-    @Transactional(propagation = Propagation.MANDATORY)
-    public void joining(User user, Household household) {
-        lockUntilStable(() -> userRepository.lockJoiningUsersExclusive(user, household));
-    }
-
-    /**
-     * The members are read before waiting for a lock. If someone joined while waiting, they are missing, so the
-     * query is repeated until it returns the same users. Once all of them are locked the members can't change.
-     */
-    private void lockUntilStable(Supplier<List<User>> lock) {
-        List<UUID> locked = ids(lock.get());
-        List<UUID> again;
-        while (!(again = ids(lock.get())).equals(locked)) {
-            locked = again;
-        }
-    }
-
-    private static List<UUID> ids(List<User> users) {
-        return users.stream().map(User::getId).toList();
+    private void lock(String function) {
+        // the functions return void, which can't be mapped
+        entityManager.createNativeQuery("select cast(" + function + "(:key) as text)")
+                .setParameter("key", LOCK_KEY)
+                .getSingleResult();
     }
 }

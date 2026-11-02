@@ -43,6 +43,7 @@ public class HouseholdService {
 
     @Transactional
     public Household createHousehold(User user) {
+        householdLocks.exclusive();
         var household = getCurrentHousehold(user);
 
         if (household.isPresent()) {
@@ -154,7 +155,7 @@ public class HouseholdService {
     @Transactional
     public void removeMember(User user, User memberId) {
         // waits for running bookings so the separation sees them
-        householdLocks.exclusive(user);
+        householdLocks.exclusive();
         Optional<Household> currentHousehold = getCurrentHousehold(user);
         //                    householdDao.getHouseholdMemberDao().delete(membership);
         currentHousehold.filter(hs -> isHouseholdAdmin(user, hs))
@@ -179,7 +180,7 @@ public class HouseholdService {
     @Transactional
     public void deleteHousehold(User user) {
         // waits for running bookings so the separation sees them
-        householdLocks.exclusive(user);
+        householdLocks.exclusive();
         Optional<Household> currentHousehold = getCurrentHousehold(user);
         currentHousehold.filter(household -> isHouseholdAdmin(user, household))
                 .ifPresent(household -> {
@@ -193,7 +194,7 @@ public class HouseholdService {
     @Transactional
     public boolean leaveHousehold(User user) {
         // waits for running bookings so the separation sees them
-        householdLocks.exclusive(user);
+        householdLocks.exclusive();
         var hs = getCurrentHousehold(user);
         if (hs.isPresent()) {
             var house = hs.get();
@@ -242,9 +243,7 @@ public class HouseholdService {
     @Transactional
     public Optional<Household> acceptInvitation(User invitee, UUID invitationId) {
         // the household's members change, nothing may rely on the current members meanwhile
-        householdMemberRepository.findById(invitationId)
-                .filter(invite -> invite.getUser().getId().equals(invitee.getId()))
-                .ifPresent(invite -> householdLocks.joining(invitee, invite.getHousehold()));
+        householdLocks.exclusive();
 
         List<HouseholdMember> invitations = getInvitations(invitee);
         Optional<HouseholdMember> invitation = invitations.stream()

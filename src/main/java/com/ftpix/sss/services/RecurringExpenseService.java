@@ -135,7 +135,7 @@ public class RecurringExpenseService {
     @Transactional
     public RecurringExpense create(RecurringExpense expense, User user) throws Exception {
         // the category might belong to a member leaving the household right now
-        householdLocks.shared(user);
+        householdLocks.shared();
         Category category = categoryService.resolve(expense.getCategory(), user);
         if (category != null) {
             expense.setCategory(category);
@@ -180,7 +180,7 @@ public class RecurringExpenseService {
     @Transactional
     public List<RecurringExpense> getToProcessForUser(User user) throws Exception {
         // expenses get created on these categories, which might belong to a member leaving the household right now
-        householdLocks.shared(user);
+        householdLocks.shared();
         Specification<RecurringExpense> spec = Specification.where(
                 Specifications.<RecurringExpense, LocalDate>lessThanOrEqual("nextOccurrence", LocalDate.now())
         ).and(Specifications.<RecurringExpense>createdBy(user));
@@ -191,7 +191,7 @@ public class RecurringExpenseService {
     @Transactional
     public boolean update(RecurringExpense expense, User user) throws Exception {
         // the category might belong to a member leaving the household right now
-        householdLocks.shared(user);
+        householdLocks.shared();
         RecurringExpense existing = getId(expense.getId(), user);
         Category category = categoryService.resolve(expense.getCategory(), user);
 

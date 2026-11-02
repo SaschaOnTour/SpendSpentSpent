@@ -177,7 +177,7 @@ public class ExpenseService {
     @Transactional
     public Expense update(Expense expense, User user) throws SQLException {
         // the category might belong to a member leaving the household right now
-        householdLocks.shared(user);
+        householdLocks.shared();
         Expense existing = expenseRepository.findExpenseByIdAndUser(expense.getId(), user);
         Category category = categoryService.resolve(expense.getCategory(), user);
         if (existing != null && category != null) {
@@ -212,7 +212,7 @@ public class ExpenseService {
     @Transactional
     public Expense create(Expense expense, User user) throws Exception {
         // the category might belong to a member leaving the household right now
-        householdLocks.shared(user);
+        householdLocks.shared();
         Category category = categoryService.resolve(expense.getCategory(), user);
         if (category == null) {
             throw new Exception("Category doesn't exist");
