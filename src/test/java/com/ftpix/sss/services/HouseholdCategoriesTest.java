@@ -646,6 +646,27 @@ public class HouseholdCategoriesTest extends TestContainerTest {
     }
 
     @Test
+    public void leavingMemberCannotEditTheFormerHouseholdCategories() throws Exception {
+        Category house = ownCategory(currentUser, "house");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (OpenTransaction<Boolean> leaving = new OpenTransaction<>(() -> householdService.leaveHousehold(partner))) {
+            Category diff = new Category();
+            diff.setIcon("food");
+            Future<Boolean> edit = inBackground(executor, () -> categoryService.mergeCategory(house.getId(), diff, partner));
+
+            // the access check must wait until the membership change is done
+            assertThrows(TimeoutException.class, () -> edit.get(1, TimeUnit.SECONDS));
+            assertTrue(leaving.commit());
+
+            assertFalse(edit.get(20, TimeUnit.SECONDS));
+            assertEquals("house", categoryService.get(house.getId(), currentUser).getIcon());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     public void bookingsDontBlockEachOther() throws Exception {
         Category house = ownCategory(currentUser, "house");
         try (OpenTransaction<Expense> booking = new OpenTransaction<>(() -> expenseService.create(newExpense(house, 1), partner))) {
