@@ -13,7 +13,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.AopTestUtils;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,8 +24,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 
 /**
- * A bulk category update of one member racing with an icon change of another member. The bulk update is paused when
- * it asks for the household lock, which must happen before it reads or writes any category.
+ * Category changes racing with changes of other members or with someone joining the household. The category change is
+ * paused around taking the household lock, which must happen before it reads or writes any category.
  */
 @Import(TestConfig.class)
 public class HouseholdCategoryLockingTest extends TestContainerTest {
@@ -44,11 +47,7 @@ public class HouseholdCategoryLockingTest extends TestContainerTest {
 
     @BeforeEach
     public void setUpHousehold() throws Exception {
-        partner = new User();
-        partner.setEmail("partner" + System.nanoTime() + "@test.com");
-        partner.setFirstName("partner");
-        partner.setLastName("test");
-        partner = userRepository.save(partner);
+        partner = newUser("partner");
 
         Household household = householdService.createHousehold(currentUser);
         householdService.inviteUser(currentUser, partner.getEmail());
@@ -66,6 +65,14 @@ public class HouseholdCategoryLockingTest extends TestContainerTest {
             }
             return invocation.callRealMethod();
         }).when(AopTestUtils.<HouseholdLocks>getUltimateTargetObject(householdLocks)).exclusive(any(User.class));
+    }
+
+    private User newUser(String name) {
+        User user = new User();
+        user.setEmail(name + System.nanoTime() + "@test.com");
+        user.setFirstName(name);
+        user.setLastName("test");
+        return userRepository.save(user);
     }
 
     private Category icon(String icon) throws Exception {
@@ -125,6 +132,50 @@ public class HouseholdCategoryLockingTest extends TestContainerTest {
             assertEquals(1, count("food"));
         } finally {
             bulkMayLock.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    public void joiningWaitsForCategoryChangesOfTheHousehold() throws Exception {
+        // the newcomer's row is locked first, the order in which a deadlock could happen
+        List<User> users = new ArrayList<>(List.of(newUser("owner"), newUser("newcomer")));
+        users.sort(Comparator.comparing(user -> user.getId().toString())); // the order of postgres
+        User newcomer = users.get(0);
+        User owner = users.get(1);
+        Household household = householdService.createHousehold(owner);
+        Category food = categoryService.create("food", owner);
+        householdService.inviteUser(owner, newcomer.getEmail());
+
+        // pauses the owner's bulk update right after it locked the household
+        CountDownLatch ownerLocked = new CountDownLatch(1);
+        CountDownLatch ownerMayContinue = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            if (invocation.<User>getArgument(0).getId().equals(owner.getId())) {
+                ownerLocked.countDown();
+                await(ownerMayContinue);
+            }
+            return result;
+        }).when(AopTestUtils.<HouseholdLocks>getUltimateTargetObject(householdLocks)).exclusive(any(User.class));
+
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+        try {
+            Future<List<Category>> bulk = executor.submit(() -> categoryService.updateMany(List.of(edit(food, "food", 42)), owner));
+            await(ownerLocked);
+
+            Future<Optional<Household>> joining = executor.submit(() -> householdService.acceptInvitation(newcomer, household));
+            assertThrows(TimeoutException.class, () -> joining.get(1, TimeUnit.SECONDS));
+            Future<Category> creating = executor.submit(() -> categoryService.create("gas", newcomer));
+            assertThrows(TimeoutException.class, () -> creating.get(1, TimeUnit.SECONDS));
+            ownerMayContinue.countDown();
+
+            assertNotNull(bulk.get(20, TimeUnit.SECONDS));
+            assertTrue(joining.get(20, TimeUnit.SECONDS).isPresent());
+            assertNotNull(creating.get(20, TimeUnit.SECONDS));
+            assertEquals(List.of("food", "gas"), categoryService.getAll(owner).stream().map(Category::getIcon).sorted().toList());
+        } finally {
+            ownerMayContinue.countDown();
             executor.shutdownNow();
         }
     }

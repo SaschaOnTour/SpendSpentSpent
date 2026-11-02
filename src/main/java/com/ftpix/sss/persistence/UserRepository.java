@@ -1,6 +1,7 @@
 package com.ftpix.sss.persistence;
 
 import com.ftpix.sss.models.User;
+import com.ftpix.sss.models.Household;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -47,4 +48,24 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query(HOUSEHOLD_USERS)
     List<User> lockHouseholdUsersExclusive(@Param("user") User user);
+
+    /**
+     * The user, the accepted members of the user's household and the accepted members of the household the user joins.
+     */
+    String JOINING_USERS = """
+            select u from User u where u = :user or u in (
+                select hm.user from HouseholdMember hm
+                where hm.status = com.ftpix.sss.models.HouseholdInviteStatus.accepted
+                and (hm.household = :household or hm.household in (
+                    select hm2.household from HouseholdMember hm2
+                    where hm2.user = :user
+                    and hm2.status = com.ftpix.sss.models.HouseholdInviteStatus.accepted
+                ))
+            )
+            order by u.id
+            """;
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(JOINING_USERS)
+    List<User> lockJoiningUsersExclusive(@Param("user") User user, @Param("household") Household household);
 }

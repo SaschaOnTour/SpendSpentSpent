@@ -241,6 +241,11 @@ public class HouseholdService {
 
     @Transactional
     public Optional<Household> acceptInvitation(User invitee, UUID invitationId) {
+        // the household's members change, nothing may rely on the current members meanwhile
+        householdMemberRepository.findById(invitationId)
+                .filter(invite -> invite.getUser().getId().equals(invitee.getId()))
+                .ifPresent(invite -> householdLocks.joining(invitee, invite.getHousehold()));
+
         List<HouseholdMember> invitations = getInvitations(invitee);
         Optional<HouseholdMember> invitation = invitations.stream()
                 .filter(invite -> invite.getId().equals(invitationId))
