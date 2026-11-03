@@ -157,7 +157,21 @@ public class ExpenseService {
                     .flatMap(note -> TAG.matcher(note).results().map(MatchResult::group))
                     .filter(tag -> tag.toLowerCase(Locale.ROOT).startsWith(start));
 
-            countIgnoringCase(tags, Integer.MAX_VALUE).forEach((tag, count) -> suggestions.merge(beforeTag + tag, count, Math::max));
+            // a completed tag can be a note already suggested, possibly spelled differently: it's suggested once, under
+            // the most used spelling, the saved note when as often used. Counts aren't added as they overlap.
+            Map<String, String> spellings = suggestions.keySet()
+                    .stream()
+                    .collect(Collectors.toMap(s -> s.toLowerCase(Locale.ROOT), s -> s));
+            countIgnoringCase(tags, Integer.MAX_VALUE).forEach((tag, count) -> {
+                String completed = beforeTag + tag;
+                String suggested = spellings.get(completed.toLowerCase(Locale.ROOT));
+                if (suggested == null) {
+                    suggestions.put(completed, count);
+                } else if (count > suggestions.get(suggested)) {
+                    suggestions.remove(suggested);
+                    suggestions.put(completed, count);
+                }
+            });
         }
 
         return suggestions;

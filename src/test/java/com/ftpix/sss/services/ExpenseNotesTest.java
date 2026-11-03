@@ -129,6 +129,24 @@ public class ExpenseNotesTest extends TestContainerTest {
     }
 
     @Test
+    public void aCompletedTagMatchingANoteInAnotherCaseIsSuggestedOnce() throws Exception {
+        expense("house", 10, "Lidl #visa");
+
+        // as often used: the saved note wins over the typed text
+        assertEquals(Map.of("Lidl #visa", 1L), expenseService.autoCompleteNote(currentUser, "lidl #vi"));
+    }
+
+    @Test
+    public void aCompletedTagMatchingANoteWithAnotherSpellingOfTheTagIsSuggestedOnce() throws Exception {
+        expense("house", 10, "Bakery #Visa");
+        expense("house", 10, "Lidl #visa");
+        expense("house", 10, "Aldi #visa");
+
+        // the most used spelling of the tag wins
+        assertEquals(Map.of("Bakery #visa", 3L), expenseService.autoCompleteNote(currentUser, "Bakery #vi"));
+    }
+
+    @Test
     public void tagsAreOnlyCompletedAtTheEnd() throws Exception {
         expense("house", 10, "Lidl #visa");
 
