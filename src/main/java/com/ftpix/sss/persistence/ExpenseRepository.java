@@ -31,7 +31,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long>, JpaSpec
     @Query("select e.note from Expense e where e.category = :category and e.amount >= :minExpense and e.amount <= :maxExpense and e.category in " + GET_HOUSEHOLD_CATEGORIES)
     List<String> findNotes(@Param(USER_PARAM) User user, @Param("category") Category category, @Param("minExpense") double minExpense, @Param("maxExpense") double maxExpense);
 
-    @Query("select e.note from Expense e where lower(e.note) like :seed and e.category in " + GET_HOUSEHOLD_CATEGORIES)
+    @Query("select e.note from Expense e where lower(e.note) like lower(:seed) and e.category in " + GET_HOUSEHOLD_CATEGORIES)
     List<String> autoCompleteNote(@Param(USER_PARAM) User user, @Param("seed") String seed);
 
 
