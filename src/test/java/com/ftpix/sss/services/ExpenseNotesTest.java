@@ -66,4 +66,73 @@ public class ExpenseNotesTest extends TestContainerTest {
 
         assertEquals(Map.of("Plumber", 1L, "Rent", 1L), suggest("house", 500));
     }
+
+    @Test
+    public void suggestionsMergeSpellingsUnderTheMostUsedOne() throws Exception {
+        expense("house", 10, "Rent");
+        expense("house", 10, "rent");
+        expense("house", 10, " rent ");
+        expense("house", 10, "Plumber");
+        expense("house", 10, "plumber");
+
+        // a tie goes to the first spelling in alphabetical order
+        assertEquals(Map.of("rent", 3L, "Plumber", 2L), suggest("house", 10));
+    }
+
+    @Test
+    public void onlyTheMostUsedNotesAreSuggested() throws Exception {
+        for (int i = 0; i < 25; i++) {
+            expense("house", 10, "Note " + i);
+        }
+        expense("house", 10, "Rent");
+        expense("house", 10, "Rent");
+
+        Map<String, Long> suggestions = suggest("house", 10);
+
+        assertEquals(20, suggestions.size());
+        assertEquals(2L, suggestions.get("Rent"));
+    }
+
+    @Test
+    public void autoCompleteMergesSpellings() throws Exception {
+        expense("house", 10, "Rent");
+        expense("house", 10, "rent");
+        expense("house", 10, "Rent");
+
+        assertEquals(Map.of("Rent", 3L), expenseService.autoCompleteNote(currentUser, "ren"));
+    }
+
+    @Test
+    public void typedTagsAreCompletedWithTheKnownTags() throws Exception {
+        expense("house", 10, "Lidl #visa");
+        expense("house", 10, "Aldi #Visa #shared");
+        expense("cloth", 10, "Shoes #visa");
+        expense("house", 10, "Rent #bank");
+        expense("house", 10, "Plumber #VIP");
+
+        assertEquals(Map.of("Bakery #visa", 3L, "Bakery #VIP", 1L), expenseService.autoCompleteNote(currentUser, "Bakery #vi"));
+
+        Map<String, Long> onlyTag = expenseService.autoCompleteNote(currentUser, "#VI");
+        assertEquals(3L, onlyTag.get("#visa"));
+        assertEquals(1L, onlyTag.get("#VIP"));
+        // and the notes containing the text, as before
+        assertEquals(1L, onlyTag.get("Plumber #VIP"));
+    }
+
+    @Test
+    public void notesMatchingACompletedTagArentCountedTwice() throws Exception {
+        expense("house", 10, "Lidl #visa");
+        expense("house", 10, "Aldi #visa");
+        expense("house", 10, "Lidl #bank");
+
+        assertEquals(Map.of("Lidl #visa", 2L, "Lidl #bank", 1L), expenseService.autoCompleteNote(currentUser, "Lidl #"));
+    }
+
+    @Test
+    public void tagsAreOnlyCompletedAtTheEnd() throws Exception {
+        expense("house", 10, "Lidl #visa");
+
+        assertEquals(Map.of(), expenseService.autoCompleteNote(currentUser, "Aldi #vi groceries"));
+        assertEquals(Map.of(), expenseService.autoCompleteNote(currentUser, "Aldi#vi"));
+    }
 }
