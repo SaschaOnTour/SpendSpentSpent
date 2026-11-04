@@ -7,9 +7,12 @@ import com.ftpix.sss.controllers.api.SearchController;
 import com.ftpix.sss.models.*;
 import com.ftpix.sss.persistence.CategoryRepository;
 import com.ftpix.sss.persistence.ExpenseRepository;
+import com.ftpix.sss.persistence.FilesRepository;
 import com.ftpix.sss.persistence.RecurringExpenseRepository;
 import com.ftpix.sss.persistence.UserRepository;
 import com.ftpix.sss.utils.MockEmailService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +57,12 @@ public class HouseholdCategoriesTest extends TestContainerTest {
     private ExpenseRepository expenseRepository;
     @Autowired
     private CategoryRepository categoryRepository;
+    @Autowired
+    private FilesRepository filesRepository;
+    @Autowired
+    private HouseholdLocks householdLocks;
+    @PersistenceContext
+    private EntityManager entityManager;
     @Autowired
     private RecurringExpenseRepository recurringExpenseRepository;
     @Autowired
@@ -482,6 +491,39 @@ public class HouseholdCategoriesTest extends TestContainerTest {
         assertTrue(categoryRepository.findById(myFood.getId()).isEmpty());
         assertEquals(partnerFood.getId(), categoryOf(mine).getId());
         assertEquals(currentUser.getId(), expenseRepository.findById(mine.getId()).orElseThrow().getUser().getId());
+    }
+
+    @Test
+    public void mergingKeepsTheEntriesOfAnAlreadyLoadedCategory() throws Exception {
+        Category myHouse = ownCategory(currentUser, "house");
+        Category partnerHouse = duplicateCategory(partner, "house");
+
+        SSSFile receipt = new SSSFile();
+        receipt.setUser(partner);
+        receipt.setFileName("receipt.png");
+        receipt.setStatus(AiProcessingStatus.NO_PROCESSING);
+        receipt = filesRepository.save(receipt);
+        Expense expense = newExpense(partnerHouse, 30);
+        expense.setFiles(new ArrayList<>(List.of(receipt)));
+        expense = expenseService.create(expense, partner);
+        RecurringExpense recurring = recurringExpenseService.create(newRecurring(partnerHouse, 20, "cleaning"), partner);
+
+        // something earlier in the transaction loaded the entries of the category being merged
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            householdLocks.exclusive();
+            entityManager.createQuery("from Category c left join fetch c.expenses where c.id = :id", Category.class)
+                    .setParameter("id", partnerHouse.getId())
+                    .getSingleResult();
+            entityManager.createQuery("from Category c left join fetch c.recurringExpenses where c.id = :id", Category.class)
+                    .setParameter("id", partnerHouse.getId())
+                    .getSingleResult();
+            backgroundJob.repairOwnership();
+        });
+
+        assertTrue(categoryRepository.findById(partnerHouse.getId()).isEmpty());
+        assertEquals(myHouse.getId(), categoryOf(expense).getId());
+        assertEquals(myHouse.getId(), recurringExpenseRepository.findById(recurring.getId()).orElseThrow().getCategory().getId());
+        assertEquals(expense.getId(), filesRepository.findById(receipt.getId()).orElseThrow().getExpense().getId());
     }
 
     @Test
