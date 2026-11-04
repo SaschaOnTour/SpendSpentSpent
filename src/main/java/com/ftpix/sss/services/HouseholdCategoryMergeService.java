@@ -5,6 +5,7 @@ import com.ftpix.sss.persistence.CategoryRepository;
 import com.ftpix.sss.persistence.ExpenseRepository;
 import com.ftpix.sss.persistence.HouseholdRepository;
 import com.ftpix.sss.persistence.RecurringExpenseRepository;
+import jakarta.persistence.EntityManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,13 +33,15 @@ public class HouseholdCategoryMergeService {
     private final CategoryRepository categoryRepository;
     private final ExpenseRepository expenseRepository;
     private final RecurringExpenseRepository recurringExpenseRepository;
+    private final EntityManager entityManager;
 
     @Autowired
-    public HouseholdCategoryMergeService(HouseholdRepository householdRepository, CategoryRepository categoryRepository, ExpenseRepository expenseRepository, RecurringExpenseRepository recurringExpenseRepository) {
+    public HouseholdCategoryMergeService(HouseholdRepository householdRepository, CategoryRepository categoryRepository, ExpenseRepository expenseRepository, RecurringExpenseRepository recurringExpenseRepository, EntityManager entityManager) {
         this.householdRepository = householdRepository;
         this.categoryRepository = categoryRepository;
         this.expenseRepository = expenseRepository;
         this.recurringExpenseRepository = recurringExpenseRepository;
+        this.entityManager = entityManager;
     }
 
     /**
@@ -95,10 +98,12 @@ public class HouseholdCategoryMergeService {
         recurringExpenses.forEach(recurring -> recurring.setCategory(kept));
         recurringExpenseRepository.saveAll(recurringExpenses);
 
-        // the category's entries are deleted with it, they must be moved first
-        expenseRepository.flush();
-        recurringExpenseRepository.flush();
-        categoryRepository.delete(duplicate);
+        // Deleting the entity would cascade to its entries, still listed in its collections if they were loaded before
+        // the move. The move is written, then only the category row is deleted.
+        entityManager.flush();
+        entityManager.createQuery("delete from Category c where c.id = :id")
+                .setParameter("id", duplicate.getId())
+                .executeUpdate();
 
         logger.info("Merged category {} into category {} ({}), moved {} expenses and {} recurring expenses",
                 duplicate.getId(), kept.getId(), kept.getIcon(), expenses.size(), recurringExpenses.size());
