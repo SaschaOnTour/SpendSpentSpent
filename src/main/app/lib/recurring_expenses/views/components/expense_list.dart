@@ -22,12 +22,13 @@ class ExpenseList extends StatelessWidget {
   void showAddRecurringExpenseDialog(BuildContext context) {
     showModal(
       context: context,
-      // as tall as its content like the expense dialog, a fixed height cut the keypad off with larger fonts
+      // as tall as its content like the expense dialog, a fixed height cut the keypad off with larger fonts.
+      // Full width on narrow screens, the step titles wrap otherwise
       builder: (context) => SafeArea(
         child: Center(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 350),
-            margin: const EdgeInsets.all(16),
+            margin: const EdgeInsets.symmetric(vertical: 16),
             child: Card(
               margin: EdgeInsets.zero,
               child: AddRecurringExpenseDialog(refreshRecurringExpenses: refreshExpenses),
