@@ -49,8 +49,13 @@ class RefreshWhenShown extends StatefulWidget {
 }
 
 class _RefreshWhenShownState extends State<RefreshWhenShown> with WidgetsBindingObserver {
-  TabsRouter? _tabsRouter;
-  String? _shownTab;
+  /// The routers from the tabs up to the root, each with the route it shows when the tab is shown. Switching tabs in
+  /// the main menu or opening the settings hides the tab as well.
+  List<(RoutingController, String)> _routers = const [];
+
+  /// Going back to a page isn't notified by its router, only by the navigation history
+  Listenable? _history;
+  bool _wasShown = true;
 
   @override
   void initState() {
@@ -62,32 +67,49 @@ class _RefreshWhenShownState extends State<RefreshWhenShown> with WidgetsBinding
   void didChangeDependencies() {
     super.didChangeDependencies();
     final tabsRouter = TabsRouterScope.of(context)?.controller;
-    if (tabsRouter != _tabsRouter) {
-      _tabsRouter?.removeListener(_tabChanged);
-      _tabsRouter = tabsRouter;
+    if (tabsRouter != _routers.firstOrNull?.$1) {
+      _stopListening();
+      final routers = <(RoutingController, String)>[];
+      RoutingController? router = tabsRouter;
+      var route = RecurringExpenseListRoute.name;
+      while (router != null) {
+        routers.add((router, route));
+        route = router.routeData.name;
+        router = router.parent();
+      }
+      _routers = routers;
+      _history = tabsRouter?.root.navigationHistory;
+      for (final (router, _) in _routers) {
+        router.addListener(_routeChanged);
+      }
+      _history?.addListener(_routeChanged);
       // the tab is built when it's first shown, the cubit loads the list then
-      _shownTab = tabsRouter?.current.name;
-      tabsRouter?.addListener(_tabChanged);
+      _wasShown = _isShown;
     }
   }
 
   @override
   void dispose() {
-    _tabsRouter?.removeListener(_tabChanged);
+    _stopListening();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  bool get _isShown => _tabsRouter == null || _tabsRouter!.current.name == RecurringExpenseListRoute.name;
-
-  void _tabChanged() {
-    final shownTab = _tabsRouter?.current.name;
-    if (shownTab != _shownTab) {
-      _shownTab = shownTab;
-      if (_isShown) {
-        _refresh();
-      }
+  void _stopListening() {
+    for (final (router, _) in _routers) {
+      router.removeListener(_routeChanged);
     }
+    _history?.removeListener(_routeChanged);
+  }
+
+  bool get _isShown => _routers.every((r) => r.$1.current.name == r.$2);
+
+  void _routeChanged() {
+    final shown = _isShown;
+    if (shown && !_wasShown) {
+      _refresh();
+    }
+    _wasShown = shown;
   }
 
   @override

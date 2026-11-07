@@ -16,26 +16,34 @@ class RecurringExpensesCubit extends Cubit<RecurringExpensesState> {
     getRecurringExpenses();
   }
 
+  int _latestRequest = 0;
+
   /// With [showLoading] false, the list is refreshed in the background: the current one stays shown and a failure is
   /// only logged.
+  ///
+  /// Only the answer to the latest request is kept, an older one could bring back an expense deleted in the meantime.
   Future<void> getRecurringExpenses({bool showLoading = true}) async {
+    final request = ++_latestRequest;
+    bool isLatest() => !isClosed && request == _latestRequest;
+
     if (showLoading) {
       emit(state.copyWith(loading: true));
     }
     try {
       final expenses = await service.getRecurringExpenses();
-      if (!isClosed) {
+      if (isLatest()) {
         emit(state.copyWith(expenses: expenses));
       }
     } catch (e, s) {
-      if (!showLoading) {
+      if (!showLoading || !isLatest()) {
         _log.warning('Could not refresh the recurring expenses', e, s);
         return;
       }
       emit(state.copyWith(error: e, stackTrace: s));
       rethrow;
     } finally {
-      if (showLoading) {
+      // the loading indicator stays until the latest request is answered
+      if (isLatest() && state.loading) {
         emit(state.copyWith(loading: false));
       }
     }
