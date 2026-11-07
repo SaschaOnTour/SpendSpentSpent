@@ -147,6 +147,25 @@ public class ExpenseNotesTest extends TestContainerTest {
     }
 
     @Test
+    public void completedTagsKeepTheirCombiningMarks() throws Exception {
+        expense("house", 10, "Rent #किराया");
+        expense("house", 10, "Bakery #café");
+
+        assertEquals(Map.of("Deposit #किराया", 1L), expenseService.autoCompleteNote(currentUser, "Deposit #कि"));
+        assertEquals(Map.of("Lidl #café", 1L), expenseService.autoCompleteNote(currentUser, "Lidl #caf"));
+    }
+
+    @Test
+    public void typedTagsAreCompletedWhateverTheCaseOfTheirLetters() throws Exception {
+        expense("house", 10, "Flight #İstanbul");
+        expense("house", 10, "Paint #ασπρο");
+
+        // lower casing in Java turns İ into two characters and a final Σ into ς, which don't match these tags
+        assertEquals(Map.of("Hotel #İstanbul", 1L), expenseService.autoCompleteNote(currentUser, "Hotel #İ"));
+        assertEquals(Map.of("Wall #ασπρο", 1L), expenseService.autoCompleteNote(currentUser, "Wall #ΑΣ"));
+    }
+
+    @Test
     public void tagsAreOnlyCompletedAtTheEnd() throws Exception {
         expense("house", 10, "Lidl #visa");
 

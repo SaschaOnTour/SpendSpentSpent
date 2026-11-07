@@ -46,10 +46,10 @@ public class ExpenseService {
     public static final String DATE = "date";
     private static final String CATEGORY_ID = "CATEGORY_ID";
     private static final int MAX_NOTE_SUGGESTIONS = 20;
-    // a tag in a note, e.g. #visa
-    private static final Pattern TAG = Pattern.compile("#[\\p{L}\\p{N}_-]+");
+    // a tag in a note, e.g. #visa, letters can carry combining marks (accents, vowel signs)
+    private static final Pattern TAG = Pattern.compile("#[\\p{L}\\p{M}\\p{N}_-]+");
     // a tag being typed at the end of a note, possibly only the #
-    private static final Pattern TYPED_TAG = Pattern.compile("(?:^|\\s)(#[\\p{L}\\p{N}_-]*)$");
+    private static final Pattern TYPED_TAG = Pattern.compile("(?:^|\\s)(#[\\p{L}\\p{M}\\p{N}_-]*)$");
     public final CategoryService categoryService;
     public final SettingsService settingsService;
     protected final Log logger = LogFactory.getLog(this.getClass());
@@ -152,16 +152,18 @@ public class ExpenseService {
         Matcher typedTag = TYPED_TAG.matcher(seed);
         if (typedTag.find()) {
             String beforeTag = seed.substring(0, typedTag.start(1));
-            String start = typedTag.group(1).toLowerCase(Locale.ROOT);
+            String start = typedTag.group(1);
 
+            // compared character by character: lower casing the whole text can change its length (İ) or depend on
+            // the position (Σ), so it wouldn't match what the database finds
             Stream<String> tags = expenseRepository.autoCompleteNote(currentUser, "%" + start + "%")
                     .stream()
                     .filter(Objects::nonNull)
                     .flatMap(note -> TAG.matcher(note).results().map(MatchResult::group))
-                    .filter(tag -> tag.toLowerCase(Locale.ROOT).startsWith(start));
+                    .filter(tag -> tag.regionMatches(true, 0, start, 0, start.length()));
 
             // a completed tag can be a note already suggested, possibly spelled differently: it's suggested once, under
-            // the most used spelling, the saved note when as often used. Counts aren't added as they overlap.
+            // the most used spelling, the existing note when both are used as often. Counts aren't added as they overlap.
             Map<String, String> spellings = suggestions.keySet()
                     .stream()
                     .collect(Collectors.toMap(s -> s.toLowerCase(Locale.ROOT), s -> s));
