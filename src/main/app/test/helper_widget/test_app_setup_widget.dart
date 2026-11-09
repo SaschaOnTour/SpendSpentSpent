@@ -6,6 +6,7 @@ import 'package:spend_spent_spent/expenses/state/last_expense.dart';
 import 'package:spend_spent_spent/globals.dart';
 import 'package:spend_spent_spent/households/states/household.dart';
 import 'package:spend_spent_spent/identity/states/username_password.dart';
+import 'package:spend_spent_spent/recurring_expenses/state/recurring_expenses.dart';
 import 'package:spend_spent_spent/router.dart';
 import 'package:spend_spent_spent/settings/state/app_settings.dart';
 
@@ -16,6 +17,7 @@ List<BlocProvider> _providers() => [
   BlocProvider<AppSettingsCubit>(create: (context) => AppSettingsCubit(const AppSettingsState())),
   BlocProvider<UsernamePasswordCubit>(create: (context) => getIt.get<UsernamePasswordCubit>()),
   BlocProvider<HouseholdCubit>(create: (context) => getIt.get<HouseholdCubit>()),
+  BlocProvider<RecurringExpensesCubit>(create: (context) => RecurringExpensesCubit(const RecurringExpensesState())),
 ];
 
 class TestSetup extends StatelessWidget {
