@@ -29,6 +29,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -81,6 +82,8 @@ public class HouseholdCategoriesTest extends TestContainerTest {
     private PlatformTransactionManager transactionManager;
     @Autowired
     private HistoryService historyService;
+    @Autowired
+    private SearchService searchService;
     @Autowired
     private com.fasterxml.jackson.databind.ObjectMapper legacyObjectMapper;
 
@@ -489,6 +492,23 @@ public class HouseholdCategoriesTest extends TestContainerTest {
         assertEquals(outsiderHouseAgain.getId(), recurringExpenseRepository.findById(insurance.getId()).orElseThrow().getCategory().getId());
         assertEquals("food", categoryOf(lunch).getIcon());
         assertEquals(outsider.getId(), categoryOf(lunch).getUser().getId());
+    }
+
+    @Test
+    public void memberLeftWithoutCategoriesSeesNoDataOfOthers() throws Exception {
+        expenseService.create(newExpense(ownCategory(currentUser, "house"), 1200), currentUser);
+        // the outsider's only category is merged into mine, they leave again without booking anything
+        categoryService.create("house", outsider);
+        householdService.inviteUser(currentUser, outsider.getEmail());
+        householdService.acceptInvitation(outsider, householdService.getCurrentHousehold(currentUser).orElseThrow());
+        householdService.leaveHousehold(outsider);
+
+        assertTrue(categoryService.getAll(outsider).isEmpty());
+        assertTrue(searchService.search(outsider, new SearchParameters(List.of(), -1, -1, null, null, ""), ZoneId.systemDefault()).isEmpty());
+        historyService.getMonthlyHistory(-1, 1, outsider)
+                .forEach(month -> assertEquals(0, ((Number) month.get("amount")).doubleValue()));
+        historyService.getYearlyHistory(-1, 1, outsider)
+                .forEach(year -> assertEquals(0, ((Number) year.get("amount")).doubleValue()));
     }
 
     @Test
