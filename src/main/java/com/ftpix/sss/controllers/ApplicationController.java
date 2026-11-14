@@ -2,6 +2,7 @@ package com.ftpix.sss.controllers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.ftpix.sss.Constants;
+import com.ftpix.sss.filters.VersionFilter;
 import com.ftpix.sss.models.CurrencyStatus;
 import com.ftpix.sss.models.Settings;
 import com.ftpix.sss.persistence.UserRepository;
@@ -26,6 +27,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 @Controller
@@ -86,6 +89,13 @@ public class ApplicationController {
     }
   }
 
+  /** Whether the current request comes from an app before 2.14.0, see {@link VersionFilter}. */
+  private static boolean isLegacyClient() {
+    return RequestContextHolder.getRequestAttributes()
+            instanceof ServletRequestAttributes attributes
+        && VersionFilter.isLegacyClient(attributes.getRequest());
+  }
+
   /**
    * Returns few values that will be use by the login screen so it knows what to display
    *
@@ -135,8 +145,14 @@ public class ApplicationController {
 
     results.put("canResetPassword", emailService.isEnabled());
 
-    results.put("backendVersion", buildProperties.getVersion());
-    results.put("minAppVersion", MIN_APP_VERSION.toString());
+    if (isLegacyClient()) {
+      // apps before 2.14.0 only read integers here
+      results.put("backendVersion", VersionFilter.LEGACY_BACKEND_VERSION);
+      results.put("minAppVersion", Integer.toString(VersionFilter.LEGACY_MIN_APP_VERSION));
+    } else {
+      results.put("backendVersion", buildProperties.getVersion());
+      results.put("minAppVersion", MIN_APP_VERSION.toString());
+    }
 
     results.put("canConvertCurrency", currencyService.canUseCurrencyConversion());
 

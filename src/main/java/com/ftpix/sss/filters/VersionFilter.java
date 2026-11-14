@@ -28,6 +28,18 @@ public class VersionFilter extends OncePerRequestFilter {
    */
   private static final String LEGACY_CLIENT_BACKEND_VERSION = "9999";
 
+  /**
+   * Fork only, for the transition: apps from 148 on, before 2.14.0, keep working until they are
+   * updated. They are told the backend is 149, the last release they know, and get the config in
+   * their format.
+   */
+  public static final int LEGACY_MIN_APP_VERSION = 148;
+
+  public static final int LEGACY_BACKEND_VERSION = 149;
+
+  /** Set on the requests of those apps. */
+  public static final String LEGACY_CLIENT_ATTRIBUTE = VersionFilter.class.getName() + ".legacy";
+
   protected final Log logger = LogFactory.getLog(this.getClass());
   private final BuildProperties buildProperties;
 
@@ -47,7 +59,13 @@ public class VersionFilter extends OncePerRequestFilter {
     String clientVersionStr = request.getHeader(VERSION_HEADER);
     if (clientVersionStr != null) {
       Optional<Version> clientVersion = Version.parse(clientVersionStr);
-      if (clientVersion.isEmpty()) {
+      Optional<Integer> legacyVersion = parseLegacyVersion(clientVersionStr);
+      if (clientVersion.isEmpty()
+          && legacyVersion.isPresent()
+          && legacyVersion.get() >= LEGACY_MIN_APP_VERSION) {
+        request.setAttribute(LEGACY_CLIENT_ATTRIBUTE, true);
+        backendVersion = Integer.toString(LEGACY_BACKEND_VERSION);
+      } else if (clientVersion.isEmpty()) {
         logger.info(
             "Client version ["
                 + clientVersionStr
@@ -67,5 +85,18 @@ public class VersionFilter extends OncePerRequestFilter {
     // we tell the front end our version
     response.setHeader(VERSION_HEADER, backendVersion);
     filterChain.doFilter(request, response);
+  }
+
+  private static Optional<Integer> parseLegacyVersion(String version) {
+    try {
+      return Optional.of(Integer.parseInt(version.trim()));
+    } catch (NumberFormatException e) {
+      return Optional.empty();
+    }
+  }
+
+  /** Whether the request comes from an app before 2.14.0 that is still let through. */
+  public static boolean isLegacyClient(HttpServletRequest request) {
+    return Boolean.TRUE.equals(request.getAttribute(LEGACY_CLIENT_ATTRIBUTE));
   }
 }
