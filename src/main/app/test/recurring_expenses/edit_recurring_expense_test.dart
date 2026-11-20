@@ -158,7 +158,8 @@ void main() {
       final cubit = await open(serverConfig: config());
 
       expect(cubit.canEditSchedule, isFalse);
-      expect(cubit.state.firstOccurrence, isNull);
+      // shown, but it can't be chosen
+      expect(cubit.state.firstOccurrence, DateTime.parse(nextOccurrence));
       cubit.setType(1);
       cubit.setTypeParam(3);
       expect(cubit.state.type, 2);
@@ -170,6 +171,41 @@ void main() {
       expect(sent['typeParam'], 15);
       expect(sent['nextOccurrence'], isNull);
       expect(sent['amount'], 9.99);
+    });
+
+    test('it isn\'t saved again while it\'s saved, nor afterwards while the dialog closes', () async {
+      final cubit = await open();
+      final request = nock(validServerUrl).post('/API/RecurringExpense/7', anything)..reply(200, 'true');
+
+      final first = cubit.save();
+      expect(cubit.state.saving, isTrue);
+      expect(await cubit.save(), isFalse);
+
+      expect(await first, isTrue);
+      expect(request.isDone, isTrue);
+      expect(cubit.state.saving, isTrue);
+      expect(await cubit.save(), isFalse);
+    });
+
+    test('it can be saved again when it wasn\'t saved', () async {
+      final cubit = await open();
+      cubit.setAmount('0');
+
+      expect(await cubit.save(), isFalse);
+      expect(cubit.state.saving, isFalse);
+    });
+
+    test('an amount of 0 can\'t be saved', () async {
+      final cubit = await open();
+      cubit.setStep(2);
+      expect(cubit.state.stepValid, isTrue);
+
+      cubit.setAmount('');
+      expect(cubit.state.stepValid, isFalse);
+      cubit.setAmount('0');
+      expect(cubit.state.stepValid, isFalse);
+      cubit.setAmount('1');
+      expect(cubit.state.stepValid, isTrue);
     });
 
     test('a new schedule starts after the last occurrence when that was today', () async {
@@ -226,7 +262,7 @@ void main() {
             body: Step2(
               type: 2,
               typeParam: 15,
-              firstOccurrence: scheduleEditable ? DateTime.parse(nextOccurrence) : null,
+              firstOccurrence: DateTime.parse(nextOccurrence),
               editing: true,
               scheduleEditable: scheduleEditable,
               setType: (_) {},
@@ -242,15 +278,17 @@ void main() {
       await show(tester, scheduleEditable: true);
 
       expect(find.text('Next payment'), findsOneWidget);
-      expect(find.text(nextOccurrence), findsOneWidget);
+      expect(find.widgetWithText(TextButton, nextOccurrence), findsOneWidget);
       expect(find.textContaining('newer server'), findsNothing);
     });
 
-    testWidgets('says when the server cannot change the schedule', (tester) async {
+    testWidgets('says when the server cannot change the schedule, and shows the next payment', (tester) async {
       await show(tester, scheduleEditable: false);
 
       expect(find.textContaining('newer server'), findsOneWidget);
-      expect(find.text('Next payment'), findsNothing);
+      expect(find.text('Next payment'), findsOneWidget);
+      expect(find.text(nextOccurrence), findsOneWidget);
+      expect(find.widgetWithText(TextButton, nextOccurrence), findsNothing);
     });
   });
 }
